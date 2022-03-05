@@ -576,8 +576,8 @@ function _oktaMakeCall()
         Write-Verbose( "Okta Request ID: " + $responseHeaders['X-Okta-Request-Id'] )
     }
 
-    if ($responseHeaders['link'])
-    {
+    if (($responseHeaders['link']) -and ($uri -notmatch "/api/v1/logs")) # don't chase the links for logs api
+    {   
         try
         {
             $link = oktaProcessHeaderLink -linkHeader $responseHeaders['link']
@@ -774,6 +774,73 @@ function _oktaNewCall()
     } #End While
 
     return $results
+}
+
+function oktaGetLogs()
+{
+    param
+    (
+        [parameter(Mandatory=$false)]
+        [ValidateLength(1,100)]
+        [string]$oOrg=$oktaDefOrg,
+
+        [datetime]$since,
+        [datetime]$until,
+        [datetime]$after,
+        [string]$filter,
+        [string]$q,
+
+        [ValidateSet("ASCENDING","DESCENDING")]
+        [string]$sortOrder,
+
+        [ValidateRange(0,1000)]
+        [int]$limit
+    )
+
+    [string]$method = "Get"
+    [string]$resource = "/api/v1/logs"
+
+    $getArgs = @()
+    if ($since) {
+        $getArgs += @("since=$($since.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
+    }
+    if ($until) {
+        $getArgs += @("until=$($until.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
+    }
+    if ($after) {
+        $getArgs += @("after=$($after.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
+    }
+    if ($filter) {
+        $getArgs += @("filter=$([Uri]::EscapeDataString($filter))")
+    }
+    if ($q) {
+        $getArgs += @("q=$([Uri]::EscapeDataString($q))")
+    }
+    if ($sortOrder) {
+        $getArgs += @("sortOrder=$($sortOrder)")
+    }
+    if ($limit) {
+        $getArgs += @("limit=$($limit.ToString())")
+    }
+
+    if ($getArgs.Count -gt 0) {
+        $resource = $resource + "?" + ($getArgs -join "&")
+    }
+
+    try
+    {
+        $request =  _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+
+    return $request
 }
 
 function oktaNewUser()
