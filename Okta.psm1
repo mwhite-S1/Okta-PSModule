@@ -486,11 +486,13 @@ function _oktaMakeCall()
             }
         }
     }
-    catch [System.Net.WebException], [Microsoft.PowerShell.Commands.HttpResponseException]
+    catch [System.Net.WebException] #, [Microsoft.PowerShell.Commands.HttpResponseException]
     {
         
         $code = $_.Exception.Response.StatusCode
         
+        Write-Warning("Exception: $($_.Exception.Response | ConvertTo-Json -Depth 10)")
+
         if ( $_.Exception.Response.Headers.Contains('X-Okta-Requst-Id') )
         {
             $reqId = $_.Exception.Response.Headers.GetValues('X-Okta-Requst-Id')
@@ -524,6 +526,10 @@ function _oktaMakeCall()
 
         switch ($code)
         {
+            "MethodNotAllowed"
+            {
+                Write-Warning("Method not allowed.")
+            }
             "429"
             {
                 Write-Warning("You hit the rate limit!")
@@ -841,6 +847,41 @@ function oktaGetLogs()
     }
 
     return $request
+}
+
+#not working
+function oktaPushGroupToApp {
+    param(
+        [parameter(Mandatory=$false)]
+        [ValidateLength(1,100)]
+        [string]$oOrg=$oktaDefOrg,
+        [string]$oktaGid,
+        [string]$appId, 
+        [ValidateSet("ACTIVE","INACTIVE")]
+        $status = "ACTIVE"
+    )
+
+    [string]$method = "Post"
+    [string]$resource = "/api/internal/instance/$appId/grouppush"
+
+    $psobj = @{
+        userGroupId=$oktaGid
+        status=$status
+    } | ConvertTo-Json
+
+    try
+    {
+        $request =  _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $psobj
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+
 }
 
 function oktaNewUser()
@@ -1383,6 +1424,34 @@ function oktaCheckCreds()
         throw $_
     }
     return $request
+}
+
+# Function: oktaGetDevices
+# Author:   Marvin White 12/14/2023
+#
+function oktaGetDevices()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg
+    )
+
+    [string]$method = "Get"
+    [string]$resource = "/api/v1/devices?expand=user&limit=50"
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    $request
 }
 
 function oktaGetUserbyID()
