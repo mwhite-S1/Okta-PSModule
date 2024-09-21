@@ -2,6 +2,8 @@ $ExecutionContext.SessionState.Module.OnRemove = {
     Remove-Module Okta_org
 }
 
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+
 function _oktaThrowError()
 {
     param
@@ -656,7 +658,7 @@ function _oktaNewCall()
         [parameter(Mandatory=$false)][Object]$altHeaders,
         [parameter(Mandatory=$false)][ValidateRange(1,10000)][int]$limit,
         [parameter(Mandatory=$false)][boolean]$untrusted=$false,
-        [parameter(Mandatory=$false)][String]$contentType = "application/json"
+        [parameter(Mandatory=$false)][String]$contentType = "application/json; charset=utf-8"
     )
 
     $headers = New-Object System.Collections.Hashtable
@@ -1433,11 +1435,12 @@ function oktaGetDevices()
 {
     param
     (
-        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$false)][ValidateRange(1,200)][Int32]$limit = 100
     )
 
     [string]$method = "Get"
-    [string]$resource = "/api/v1/devices?expand=user&limit=50"
+    [string]$resource = "/api/v1/devices?expand=user&limit=$limit&search=status eq ""ACTIVE"""
 
     try
     {
@@ -2489,13 +2492,15 @@ function oktaCreateGroup()
     (
         [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
         [parameter(Mandatory=$true)][ValidateLength(1,255)][String]$name,
-        [parameter(Mandatory=$false)][ValidateLength(1,1024)][String]$description=$null
+        [parameter(Mandatory=$false)][ValidateLength(1,1024)][String]$description=$null,
+        [parameter(Mandatory=$false)][ValidateLength(1,1024)][String]$manager=$null
     )
 
     $psobj = @{
         profile = @{
             name = $name    
             description = $description
+            manager = $manager
         }
       }
     
@@ -2619,6 +2624,16 @@ function oktaDelUserFromAllGroups()
     }
 }
 
+function oktaGetGroupsBySearch()
+{
+    param
+    (
+        [parameter(Mandatory=$true)][String]$search,
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg
+    )
+    oktaListGroups -oOrg $oOrg -search $search
+}
+
 function oktaGetGroupsbyquery()
 {
     param
@@ -2645,6 +2660,7 @@ function oktaListGroups()
     (
         [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
         [parameter(Mandatory=$false)][String]$query,
+        [parameter(Mandatory=$false)][String]$search,
         [parameter(Mandatory=$false)][String]$filter,
         [parameter(Mandatory=$false)][int]$limit=$OktaOrgs[$oOrg].pageSize,
         [parameter(Mandatory=$false)][switch]$expand
@@ -2654,6 +2670,10 @@ function oktaListGroups()
     if ($query)
     {
         $resource += "&q=" + $query
+    }
+    if ($search)
+    {
+        $resource += "&search=" + $search
     }
     if ($filter)
     {
