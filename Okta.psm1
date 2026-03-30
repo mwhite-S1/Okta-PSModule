@@ -4,6 +4,10 @@ $ExecutionContext.SessionState.Module.OnRemove = {
 
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 
+# System.Web is not auto-loaded in Windows PowerShell 5.1; load it explicitly so
+# [System.Web.HttpUtility]::UrlPathEncode is available on all PS versions.
+Add-Type -AssemblyName System.Web
+
 function _oktaThrowError()
 {
     param
@@ -41,7 +45,7 @@ function oktaNewPassword
         [Int32]$MustIncludeSets = 3
     )
 
-    $CharacterSets = @("ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwzyz","0123456789","!$-#")
+    $CharacterSets = @("ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz","0123456789","!$-#")
 
     $Random = New-Object Random
 
@@ -76,7 +80,7 @@ function oktaRandLower
         [Int32]$MustIncludeSets = 3
     )
 
-    $CharacterSets = @("abcdefghijklmnopqrstuvwzyz","abcdefghijklmnopqrstuvwzyz","abcdefghijklmnopqrstuvwzyz","abcdefghijklmnopqrstuvwzyz")
+    $CharacterSets = @("abcdefghijklmnopqrstuvwxyz","abcdefghijklmnopqrstuvwxyz","abcdefghijklmnopqrstuvwxyz","abcdefghijklmnopqrstuvwxyz")
 
     $Random = New-Object Random
 
@@ -340,11 +344,11 @@ function OktaRolefromJson()
 
     foreach ($df in $dateFields)
     {
-        if ($role[$df])
+        if ($role.$df)
         {
-            $role[$df] = Get-Date $role.$df
+            $role.$df = Get-Date $role.$df
         } else {
-            $role[$df] = $null
+            $role.$df = $null
         }
     }
     return $role
@@ -470,10 +474,10 @@ function _oktaMakeCall()
                 $postData = ConvertTo-Json $body -Depth 10
                 Write-Verbose($postData)
                 $request2 = Invoke-WebRequest -Uri $uri -Method $method -UserAgent $userAgent -Headers $headers `
-                            -ContentType $contentType -Verbose:$oktaVerbose -Body $postData -ErrorVariable evar -SessionVariable Global:myWebSession
+                            -ContentType $contentType -Verbose:$oktaVerbose -Body $postData -ErrorVariable evar -SessionVariable Global:myWebSession -UseBasicParsing
             } else {
                 $request2 = Invoke-WebRequest -Uri $uri -Method $method -UserAgent $userAgent -Headers $headers `
-                            -ContentType $contentType -Verbose:$oktaVerbose -ErrorVariable evar -SessionVariable Global:myWebSession
+                            -ContentType $contentType -Verbose:$oktaVerbose -ErrorVariable evar -SessionVariable Global:myWebSession -UseBasicParsing
             }
         } else {
             if ( ($method -eq "Post") -or ($method -eq "Put") )
@@ -481,10 +485,10 @@ function _oktaMakeCall()
                 $postData = ConvertTo-Json $body -Depth 10
                 Write-Verbose($postData)
                 $request2 = Invoke-WebRequest -Uri $uri -Method $method -UserAgent $userAgent -Headers $headers `
-                            -ContentType $contentType -Verbose:$oktaVerbose -Body $postData -ErrorVariable evar -WebSession $Global:myWebSession
+                            -ContentType $contentType -Verbose:$oktaVerbose -Body $postData -ErrorVariable evar -WebSession $Global:myWebSession -UseBasicParsing
             } else {
                 $request2 = Invoke-WebRequest -Uri $uri -Method $method -UserAgent $userAgent -Headers $headers `
-                            -ContentType $contentType -Verbose:$oktaVerbose -ErrorVariable evar -WebSession $Global:myWebSession  
+                            -ContentType $contentType -Verbose:$oktaVerbose -ErrorVariable evar -WebSession $Global:myWebSession -UseBasicParsing
             }
         }
     }
@@ -495,9 +499,9 @@ function _oktaMakeCall()
         
         Write-Warning("Exception: $($_.Exception.Response | ConvertTo-Json -Depth 10)")
 
-        if ( $_.Exception.Response.Headers.Contains('X-Okta-Requst-Id') )
+        if ( $_.Exception.Response.Headers.Contains('X-Okta-Request-Id') )
         {
-            $reqId = $_.Exception.Response.Headers.GetValues('X-Okta-Requst-Id')
+            $reqId = $_.Exception.Response.Headers.GetValues('X-Okta-Request-Id')
             Write-Warning("Okta Request ID: " + $reqId[0])
         }
         
@@ -531,10 +535,12 @@ function _oktaMakeCall()
             "MethodNotAllowed"
             {
                 Write-Warning("Method not allowed.")
+                throw($evar[0].ErrorRecord.Exception.Message)
             }
             "429"
             {
                 Write-Warning("You hit the rate limit!")
+                throw($evar[0].ErrorRecord.Exception.Message)
             }
             "BadRequest"
             {
@@ -707,12 +713,7 @@ function _oktaNewCall()
     {
         try
         {
-            if ($file)
-            {
-                $response = _oktaMakeCall -method $method -uri $uri -headers $headers -file $file -userAgent $userAgent -contentType $contentType
-            } else {
-                $response = _oktaMakeCall -method $method -uri $uri -headers $headers -body $body -userAgent $userAgent -contentType $contentType
-            }
+            $response = _oktaMakeCall -method $method -uri $uri -headers $headers -body $body -userAgent $userAgent -contentType $contentType
         }
         catch
         {
@@ -805,50 +806,16 @@ function oktaGetLogs()
         [int]$limit
     )
 
-    [string]$method = "Get"
-    [string]$resource = "/api/v1/logs"
+    $splat = @{ oOrg = $oOrg }
+    if ($since)     { $splat['since']  = Get-Date $since.ToUniversalTime()  -Format "yyyy-MM-ddTHH:mm:ss.fffZ" }
+    if ($until)     { $splat['until']  = Get-Date $until.ToUniversalTime()  -Format "yyyy-MM-ddTHH:mm:ss.fffZ" }
+    if ($after)     { $splat['after']  = Get-Date $after.ToUniversalTime()  -Format "yyyy-MM-ddTHH:mm:ss.fffZ" }
+    if ($filter)    { $splat['filter'] = $filter }
+    if ($q)         { $splat['q']      = $q }
+    if ($sortOrder) { $splat['order']  = $sortOrder }
+    if ($limit)     { $splat['limit']  = $limit }
 
-    $getArgs = @()
-    if ($since) {
-        $getArgs += @("since=$($since.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
-    }
-    if ($until) {
-        $getArgs += @("until=$($until.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
-    }
-    if ($after) {
-        $getArgs += @("after=$($after.ToString("s", [System.Globalization.CultureInfo]::InvariantCulture))")
-    }
-    if ($filter) {
-        $getArgs += @("filter=$([Uri]::EscapeDataString($filter))")
-    }
-    if ($q) {
-        $getArgs += @("q=$([Uri]::EscapeDataString($q))")
-    }
-    if ($sortOrder) {
-        $getArgs += @("sortOrder=$($sortOrder)")
-    }
-    if ($limit) {
-        $getArgs += @("limit=$($limit.ToString())")
-    }
-
-    if ($getArgs.Count -gt 0) {
-        $resource = $resource + "?" + ($getArgs -join "&")
-    }
-
-    try
-    {
-        $request =  _oktaNewCall -method $method -resource $resource -oOrg $oOrg
-    }
-    catch
-    {
-        if ($oktaVerbose -eq $true)
-        {
-            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
-        }
-        throw $_
-    }
-
-    return $request
+    return oktaListLogs @splat
 }
 
 #not working
@@ -922,7 +889,7 @@ function oktaNewUser()
         $psobj.add("groupIds", $groupIds)
     }
     [string]$method = "Post"
-    [string]$resource = "/api/v1/users?activate=True"
+    [string]$resource = "/api/v1/users?activate=true"
     try
     {
         $request = _oktaNewCall -oOrg $oOrg -method $method -resource $resource -body $psobj
@@ -969,7 +936,7 @@ function oktaNewUser2()
         $psobj.profile.add($attrib, $additional.$attrib)
     }
     [string]$method = "Post"
-    [string]$resource = "/api/v1/users?activate=False"
+    [string]$resource = "/api/v1/users?activate=false"
     try
     {
         $request = _oktaNewCall -oOrg $oOrg -method $method -resource $resource -body $psobj
@@ -1030,8 +997,7 @@ function oktaPutProfileupdate()
         [object]$updates
     )
 
-    $psobj = New-Object System.Collections.Hashtable
-    Add-Member -InputObject $psobj -MemberType NoteProperty -Name profile -Value $updates
+    $psobj = @{ profile = $updates }
 
     [string]$method = "Put"
     [string]$resource = "/api/v1/users/" + $uid
@@ -1079,10 +1045,10 @@ function oktaUpdateUserbyID()
                 }
                 "credentials" = @{
                     "password" = @{ "value" = $password }
-                    "recovery_question" = @{ "question" = $r_question;"answer" = $r_answer.ToLower().Replace(" ","")}
+                    "recovery_question" = @{ "question" = $r_question;"answer" = ([string]$r_answer).ToLower().Replace(" ","")}
                 }
               }
-    
+
     [string]$method = "Put"
     [string]$resource = "/api/v1/users/" + $uid
     try
@@ -1145,15 +1111,14 @@ function oktaAdminExpirePasswordbyID()
     (
         [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
         [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$uid,
-        [string]$tempPassword=(oktaNewPassword)
+        [switch]$returnTempPassword
     )
-    $psobj = @{ "tempPassword" = $tempPassword }
 
     [string]$method = "Post"
-    [string]$resource = "/api/v1/users/" + $uid + "/lifecycle/expire_password?tempPassword=false"
+    [string]$resource = "/api/v1/users/" + $uid + "/lifecycle/expire_password?tempPassword=" + $returnTempPassword.IsPresent.ToString().ToLower()
     try
     {
-        $request = _oktaNewCall -oOrg $oOrg -method $method -resource $resource -body $psobj
+        $request = _oktaNewCall -oOrg $oOrg -method $method -resource $resource
     }
     catch
     {
@@ -1167,7 +1132,7 @@ function oktaAdminExpirePasswordbyID()
     {
         $user = OktaUserfromJson -user $user
     }
-    return $request    
+    return $request
 }
 
 function oktaAdminUpdateQandAbyID()
@@ -1251,7 +1216,7 @@ function oktaForgotPasswordbyId()
     )
     $psobj = @{
                 "password" = @{ "value" = $new_password }
-                "recovery_question" = @{ "answer" = $r_answer.ToLower().Replace(" ","") }
+                "recovery_question" = @{ "answer" = ([string]$r_answer).ToLower().Replace(" ","") }
               }
     [string]$method = "Post"
     [string]$resource = "/api/v1/users/" + $uid + "/credentials/forgot_password"
@@ -1394,11 +1359,12 @@ function oktaCheckCreds()
     $psobj = New-Object hashtable
     foreach ($p in $param)
     {
-        if (Get-Variable -Name $p -ErrorAction SilentlyContinue) 
+        if (Get-Variable -Name $p -ErrorAction SilentlyContinue)
         {
-            if ((Get-Variable -Name $p -ValueOnly) -ne "")
+            $val = Get-Variable -Name $p -ValueOnly
+            if ($null -ne $val -and $val -ne "" -and -not ($val -is [hashtable] -and $val.Count -eq 0))
             {
-                $psobj.Add($p,(Get-Variable -Name $p -ValueOnly))
+                $psobj.Add($p, $val)
             }
         }
     }
@@ -1428,6 +1394,8 @@ function oktaCheckCreds()
     return $request
 }
 
+
+
 # Function: oktaGetDevices
 # Author:   Marvin White 12/14/2023
 #
@@ -1440,7 +1408,7 @@ function oktaGetDevices()
     )
 
     [string]$method = "Get"
-    [string]$resource = "/api/v1/devices?expand=user&limit=$limit&search=status eq ""ACTIVE"""
+    [string]$resource = "/api/v1/devices?expand=user&limit=$limit&search=" + [Uri]::EscapeDataString('status eq "ACTIVE"')
 
     try
     {
@@ -1906,6 +1874,78 @@ function oktaGetAppGroups()
     return $request
 }
 
+function oktaAppAssignGroup
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$aid,
+        [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$gid,
+        [parameter(Mandatory=$false)][AllowNull()][int]$priority = $null,
+        [parameter(Mandatory=$false)][Hashtable]$profile=$null
+    )
+        
+    [string]$method = "Put"
+    [string]$resource = ""
+    $resource = '/api/v1/apps/' + $aid + '/groups/' + $gid
+    $bodyMap = @{}
+
+    try
+    {
+        if ($priority) {
+            $bodyMap["priority"] = $priority
+        }
+        if ($profile) {
+            $bodyMap["profile"] = $profile
+        }
+        if ($bodyMap.Keys.Count -gt 0) {
+            $method = "Post"
+            $body = $bodyMap | ConvertTo-Json
+            $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $body
+        } else {
+            $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+        }
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+
+    return $request
+}
+
+function oktaAppUnassignGroup
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$aid,
+        [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$gid
+    )
+        
+    [string]$method = "Delete"
+    [string]$resource = '/api/v1/apps/' + $aid + '/groups/' + $gid
+    
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+
+    return $request
+}
+
 function oktaListUsers()
 {
     param
@@ -1971,12 +2011,13 @@ function oktaListAdministrators()
     {
         [string]$resource = $resource + "/groups"
     }
+    elseif ($uid)
+    {
+        [string]$resource = $resource + "/" + $uid
+    }
     elseif ($limit)
     {
         [string]$resource = $resource + "?limit=" + $limit
-    } elseif ($uid)
-    {
-        [string]$resource = $resource + "/" + $uid
     }
 
     try
@@ -2180,7 +2221,7 @@ function oktaResetPasswordbyID()
     )
     
     [string]$method = "Post"
-    [string]$resource = '/api/v1/users/' + $uid + '/lifecycle/reset_password?sendEmail=' + $sendEmail
+    [string]$resource = '/api/v1/users/' + $uid + '/lifecycle/reset_password?sendEmail=' + $sendEmail.ToString().ToLower()
     
     try
     {
@@ -2194,10 +2235,7 @@ function oktaResetPasswordbyID()
         }
         throw $_
     }
-    foreach ($user in $request)
-    {
-        $user = OktaUserfromJson -user $user
-    }
+    # Response is { resetPasswordUrl: "..." }, not a user object — no date conversion needed.
     return $request
 }
 
@@ -2282,7 +2320,7 @@ function oktaActivateUserbyId()
         }
     }
 
-    [string]$resource = '/api/v1/users/' + $uid + '/lifecycle/activate?sendEmail=False'
+    [string]$resource = '/api/v1/users/' + $uid + '/lifecycle/activate?sendEmail=false'
     [string]$method = "Post"
     try
     {
@@ -2355,7 +2393,7 @@ function oktaUpdateAppOverrides()
     
     $new = @{signOnMode=$app.signOnMode; label=$app.label; name=$app.name; settings=$app.settings}
     
-    oktaUpdateApp -oOrg $org -aid $aid -app $new
+    oktaUpdateApp -oOrg $oOrg -aid $aid -app $new
 }
 
 function oktaGetAppbyId()
@@ -3066,7 +3104,7 @@ function oktaGetGroupMembersbyId()
 
     try
     {
-        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -enablePagination:$true
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -enablePagination $enablePagination
     }
     catch
     {
@@ -3307,8 +3345,7 @@ function oktaActivateFactorByUser()
         [parameter(Mandatory=$false)][ValidateLength(20,20)][String]$uid,
         [parameter(Mandatory=$false)][ValidateLength(1,255)][String]$username,
         [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$fid,
-        [parameter(Mandatory=$true)][ValidateLength(6,6)][String]$passCode
-
+        [parameter(Mandatory=$false)][ValidateLength(5,20)][String]$passCode
     )
 
     if (!$uid)
@@ -3321,7 +3358,12 @@ function oktaActivateFactorByUser()
         }
     }
 
-    $body = @{ passCode = $passCode }
+    if ($passCode)
+    {
+        $body = @{ passCode = $passCode }
+    } else {
+        $body = $null
+    }
 
     [string]$resource = '/api/v1/users/' + $uid + '/factors/' + $fid + '/lifecycle/activate'
     [string]$method = "Post"
@@ -3393,40 +3435,6 @@ function oktaEnrollFactorByUser()
     if ($updatePhone){$params.Add("updatePhone",$true)}
     
     $resource = oktaBuildURI -resource $resource -params $params
-    try
-    {
-        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $body
-    }
-    catch
-    {
-        if ($oktaVerbose -eq $true)
-        {
-            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
-        }
-        throw $_
-    }
-    return $request
-}
-
-function oktaActivateFactorByUser()
-{
-    param
-    (
-        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
-        [parameter(Mandatory=$true)][ValidateLength(20,20)][String]$uid,
-        [parameter(Mandatory=$true)][ValidateLength(1,255)][String]$fid,
-        [parameter(Mandatory=$false)][ValidateLength(5,20)][String]$passCode
-    )
-
-    if ($passCode)
-    {
-        $body = @{ passCode = $passCode }
-    } else {
-        $body = $null
-    }
-    [string]$resource = '/api/v1/users/' + $uid + '/factors/' + $fid + '/lifecycle/activate'
-    [string]$method = "Post"
-
     try
     {
         $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $body
@@ -4139,7 +4147,7 @@ function oktaListEvents()
         [string]$resource = "/api/v1/events?startDate=" + $startDate + "&filter=" + $filter + "&limit=" + $limit
     } elseif ($startDate)
     {
-        [string]$resource = "/api/v1/events?startDate" + $startDate + "&limit=" + $limit    
+        [string]$resource = "/api/v1/events?startDate=" + $startDate + "&limit=" + $limit
     } elseif ($filter)
     {
         [string]$resource = "/api/v1/events?filter=" + $filter + "&limit=" + $limit
@@ -4180,7 +4188,9 @@ function oktaListLogs()
         [parameter(Mandatory=$false)][string]$since,
         [parameter(Mandatory=$false)][string]$until,
         [parameter(Mandatory=$false)][string]$filter,
-        [parameter(Mandatory=$false)][ValidateSet("ASCENDING","DESCENDING")][string]$order,
+        [parameter(Mandatory=$false)][string]$q,
+        [parameter(Mandatory=$false)][string]$after,
+        [parameter(Mandatory=$false)][ValidateSet("ASCENDING","DESCENDING")][alias("sortOrder")][string]$order,
         [parameter(Mandatory=$false)][string]$next
     )
 
@@ -4231,6 +4241,16 @@ function oktaListLogs()
     if ($filter)
     {
         $params.Add("filter",$filter)
+    }
+
+    if ($q)
+    {
+        $params.Add("q",$q)
+    }
+
+    if ($after)
+    {
+        $params.Add("after",$after)
     }
 
     if ($next)
@@ -4324,11 +4344,11 @@ function oktaNewProviderPolicyObject()
         [parameter(Mandatory=$false)][array]$groupsFilter=@(),
         [parameter(Mandatory=$false)][array]$groupsAssign=@(),
         [parameter(Mandatory=$false)][string]$groupSourceAttrName='Groups',
-        [parameter(Mandatory=$false)][ValidateLength(9,1024)][String]$userNameTempalate='idpuser.subjectNameId',
+        [parameter(Mandatory=$false)][ValidateLength(9,1024)][String]$userNameTemplate='idpuser.subjectNameId',
         [parameter(Mandatory=$false)][String]$subjectFilter=$null,
         [parameter(Mandatory=$false)][ValidateSet('EMAIL','USERNAME','USERNAME_OR_EMAIL','CUSTOM_ATTRIBUTE')][String]$subjectMatchType='USERNAME_OR_EMAIL',
         [parameter(Mandatory=$false)][String]$subjectMatchAttr=$null,
-        [parameter(Mandatory=$false)][String]$maxClockSwew='120000'
+        [parameter(Mandatory=$false)][String]$maxClockSkew='120000'
     )
 
     $groups = @{ action = $provGroupAction; sourceAttributeName = $groupSourceAttrName; filter = $groupsFilter; assignments = $groupsAssign }
@@ -4336,14 +4356,14 @@ function oktaNewProviderPolicyObject()
 
     if ($accountLinkFilter.Count -ge 1)
     {
-        $accountLink = @{ action = $accountLinkAction; filter = @{groups = @{include = $accountLinkFilter }} }   
+        $accountLink = @{ action = $accountLinkAction; filter = @{groups = @{include = $accountLinkFilter }} }
     } else {
         $accountLink = @{ action = $accountLinkAction; filter = $null }
     }
-    $userNameTemplateobject = @{ template = $userNameTempalate }
+    $userNameTemplateobject = @{ template = $userNameTemplate }
     $subject = @{ userNameTemplate = $userNameTemplateobject; filter = $subjectFilter; matchType = $subjectMatchType; matchAttribute = $subjectMatchAttr }
 
-    $policy = @{ provisioning = $provisioning; accountLink = $accountLink; subject = $subject; maxClockSkew = $maxClockSwew }
+    $policy = @{ provisioning = $provisioning; accountLink = $accountLink; subject = $subject; maxClockSkew = $maxClockSkew }
     
     return $policy
 }
@@ -4622,25 +4642,19 @@ function oktaCreateZone()
     (
         [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
         [parameter(Mandatory=$false)][ValidateSet("IP")][String]$type="IP",
-        [parameter(Mandatory=$true)][ValidateLength(1,128)][String]$name
+        [parameter(Mandatory=$true)][ValidateLength(1,128)][String]$name,
+        [parameter(Mandatory=$false)][array]$gateways=@(),
+        [parameter(Mandatory=$false)][array]$proxies=@()
     )
 
     [string]$method = "Post"
     [string]$resource = '/api/v1/org/zones'
 
-
-    $cidr=@{"type" = "CIDR";"value" = "132.190.0.0/16"}
-    $range = @{"type" = "RANGE";"value" = "132.190.192.10"}
-    $gateways = @($cidr)
-    $proxies = @($range)
-    $request = @{ 
+    $request = @{
                   type = $type
                   name = $name
                   status = "ACTIVE"
                   system = $false
-                  id = $null
-                  created = $null
-                  lastUpdated = $null
                   gateways = $gateways
                   proxies = $proxies
                 }
@@ -4773,7 +4787,7 @@ function oktaUpdateZone()
     
     if ($newName)
     {
-        if (!$newName -eq $current.name)
+        if ($newName -ne $current.name)
         {
             $worktoDo = $true
             $name = $newName
@@ -5012,13 +5026,14 @@ function oktaListGroupRules()
     (
         [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
         [parameter(Mandatory=$false)][int]$limit=50,
-        [parameter(Mandatory=$false)][string]$grid
+        [parameter(Mandatory=$false)][string]$grid,
+        [parameter(Mandatory=$false)][switch]$rules
     )
 
     [string]$method = "Get"
     [string]$resource = '/api/v1/groups/rules'
 
-    if ($pid)
+    if ($grid)
     {
         $resource += '/' + $grid
     }
