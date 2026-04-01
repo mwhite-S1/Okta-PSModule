@@ -37,6 +37,25 @@ None known. Review and test authoring complete.
 
 ---
 
+## Session 3
+
+### What Was Done
+- Added 6 Group Rules API functions to `Okta.psm1`:
+  `oktaGetGroupRuleById`, `oktaCreateGroupRule`, `oktaUpdateGroupRule`,
+  `oktaDeleteGroupRule`, `oktaActivateGroupRule`, `oktaDeactivateGroupRule`
+- Added read-only Group Rules section to `tests/Integration.Tests.ps1`
+  (list all rules, get by ID — skips gracefully if prev org has no rules)
+- Created `tests/GroupRule.Tests.ps1` — full end-to-end write test suite:
+  BeforeAll creates a disposable group + rule; AfterAll deletes both.
+  Covers: GetById, List, Update (rename while INACTIVE), Activate, Deactivate.
+
+### Files Modified/Created
+- `Okta.psm1` — 6 new functions added before Export-ModuleMember
+- `tests/Integration.Tests.ps1` — Group Rules read-only section added
+- `tests/GroupRule.Tests.ps1` — new write/lifecycle test suite
+
+---
+
 ## Session 2
 
 ### What Was Done
