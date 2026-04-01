@@ -78,6 +78,30 @@ See findings.md — "Round 2 Findings" section.
 
 ---
 
+---
+
+## Phase 5 — Group Rules API Support
+**Status: complete**
+
+Add full CRUD + lifecycle functions for the Okta Group Rules API (`/api/v1/groups/rules`).
+
+| Task | Function | Description |
+|------|----------|-------------|
+| K | `oktaGetGroupRuleById` | GET a single rule by ID |
+| L | `oktaCreateGroupRule` | POST — create a new rule |
+| M | `oktaUpdateGroupRule` | PUT — update an existing rule |
+| N | `oktaDeleteGroupRule` | DELETE a rule |
+| O | `oktaActivateGroupRule` | POST to `.../lifecycle/activate` |
+| P | `oktaDeactivateGroupRule` | POST to `.../lifecycle/deactivate` |
+
+Read-only tests (list, get) added to `tests/Integration.Tests.ps1`.
+Full write/lifecycle tests in `tests/GroupRule.Tests.ps1`:
+- BeforeAll: creates disposable group + rule
+- Covers: GetById, List, Update, Activate, Deactivate
+- AfterAll: deletes rule then group
+
+---
+
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|

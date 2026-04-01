@@ -305,6 +305,54 @@ Describe 'oktaGetDevices  -  list active devices' {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Group Rules
+# ---------------------------------------------------------------------------
+Describe 'oktaListGroupRules  -  list group rules' {
+
+    It 'Does not throw and returns a result or empty array' {
+        { $Script:groupRules = oktaListGroupRules -oOrg $Script:org -limit 25 } | Should -Not -Throw
+    }
+
+    It 'Each rule has an id, name, and status' {
+        $rules = @($Script:groupRules)
+        if ($rules.Count -eq 0) {
+            Set-ItResult -Skipped -Because 'No group rules exist in prev org'
+        }
+        $first = $rules[0]
+        $first.id     | Should -Not -BeNullOrEmpty
+        $first.name   | Should -Not -BeNullOrEmpty
+        $first.status | Should -Match '^(ACTIVE|INACTIVE)$'
+    }
+}
+
+Describe 'oktaGetGroupRuleById  -  fetch a single rule by ID' {
+
+    BeforeAll {
+        $Script:firstRule = @($Script:groupRules)[0]
+    }
+
+    It 'Returns the correct rule object' {
+        if (-not $Script:firstRule) {
+            Set-ItResult -Skipped -Because 'No group rules exist in prev org'
+        }
+        $result = oktaGetGroupRuleById -oOrg $Script:org -ruleId $Script:firstRule.id
+        $result | Should -Not -BeNullOrEmpty
+        $result.id   | Should -Be $Script:firstRule.id
+        $result.name | Should -Be $Script:firstRule.name
+    }
+
+    It 'Rule has conditions and actions' {
+        if (-not $Script:firstRule) {
+            Set-ItResult -Skipped -Because 'No group rules exist in prev org'
+        }
+        $result = oktaGetGroupRuleById -oOrg $Script:org -ruleId $Script:firstRule.id
+        $result.conditions | Should -Not -BeNullOrEmpty
+        $result.actions    | Should -Not -BeNullOrEmpty
+    }
+}
+
+
 AfterAll {
     Remove-Module Okta -ErrorAction SilentlyContinue
 }
