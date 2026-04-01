@@ -16,4 +16,8 @@
 
     # A group ID that is assigned to the KnownAppId above.
     KnownAppGroupId = "00ghddtvit6Dcn3YB1d7"
+
+    # An app ID that has provisioning (Group Push) enabled.
+    # Required for GroupPush.Tests.ps1.
+    PushEnabledAppId = "0oa1tsl3iskgQdXzd1d7"
 }
