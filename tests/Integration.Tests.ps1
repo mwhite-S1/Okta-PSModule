@@ -306,6 +306,40 @@ Describe 'oktaGetDevices  -  list active devices' {
 }
 
 # ---------------------------------------------------------------------------
+# Group Push Mappings (read-only)
+# ---------------------------------------------------------------------------
+Describe 'oktaListGroupPushMappings  -  list push mappings for a known app' {
+
+    It 'Does not throw' {
+        { $Script:pushMappings = oktaListGroupPushMappings -oOrg $Script:org -appId $Script:aid -limit 20 } |
+            Should -Not -Throw
+    }
+
+    It 'Each mapping has a mappingId and status' {
+        $mappings = @($Script:pushMappings)
+        if ($mappings.Count -eq 0) {
+            Set-ItResult -Skipped -Because 'No push mappings on KnownAppId in prev org'
+        }
+        $first = $mappings[0]
+        $first.id     | Should -Not -BeNullOrEmpty
+        $first.status | Should -Match '^(ACTIVE|INACTIVE|ERROR)$'
+    }
+}
+
+Describe 'oktaGetGroupPushMapping  -  fetch a single mapping by ID' {
+
+    It 'Returns the correct mapping' {
+        $first = @($Script:pushMappings)[0]
+        if (-not $first) {
+            Set-ItResult -Skipped -Because 'No push mappings on KnownAppId in prev org'
+        }
+        $result = oktaGetGroupPushMapping -oOrg $Script:org -appId $Script:aid -mappingId $first.id
+        $result | Should -Not -BeNullOrEmpty
+        $result.id | Should -Be $first.id
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Group Rules
 # ---------------------------------------------------------------------------
 Describe 'oktaListGroupRules  -  list group rules' {

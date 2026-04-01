@@ -102,6 +102,41 @@ Full write/lifecycle tests in `tests/GroupRule.Tests.ps1`:
 
 ---
 
+---
+
+## Phase 6 - Group Push Mappings Support
+**Status: complete**
+
+### Goal
+Replace the broken `oktaPushGroupToApp` with a complete, correct implementation using the official Group Push Mappings API plus the internal trigger endpoint.
+
+### Background
+The existing `oktaPushGroupToApp` called `POST /api/internal/instance/{appId}/grouppush` (no mappingId) with a partially-formed body. This endpoint does not exist in that form — the function has never worked. The correct public API was released in 2025 and the internal trigger requires a mappingId from the mapping API.
+
+### Functions to implement
+
+| Task | Function | Method | Endpoint |
+|------|----------|--------|----------|
+| 6-A | Remove `oktaPushGroupToApp` | - | Replaced entirely |
+| 6-B | `oktaListGroupPushMappings` | GET | `/api/v1/apps/{appId}/group-push/mappings` |
+| 6-C | `oktaGetGroupPushMapping` | GET | `/api/v1/apps/{appId}/group-push/mappings/{mappingId}` |
+| 6-D | `oktaCreateGroupPushMapping` | POST | `/api/v1/apps/{appId}/group-push/mappings` |
+| 6-E | `oktaUpdateGroupPushMapping` | PUT | `/api/v1/apps/{appId}/group-push/mappings/{mappingId}` |
+| 6-F | `oktaDeleteGroupPushMapping` | DELETE | `/api/v1/apps/{appId}/group-push/mappings/{mappingId}` |
+| 6-G | `oktaTriggerGroupPush` | PUT | `/api/internal/instance/{appId}/grouppush/{mappingId}` |
+
+### Key API notes
+- `oktaCreateGroupPushMapping`: requires `$sourceGroupId`; requires exactly one of `$targetGroupId` (link existing) or `$targetGroupName` (create new). Validated in function.
+- `oktaUpdateGroupPushMapping`: accepts partial updates — `$status` (ACTIVE/INACTIVE/ERROR), `$sourceGroupId`, `$targetGroupName`.
+- `oktaTriggerGroupPush`: internal endpoint, not covered by Okta SLA. Sends `{ status: ACTIVE|INACTIVE }` to force a push or suspend. Marked with a warning comment in code.
+- Provisioning must be enabled on the target app for push mappings to work.
+
+### Test plan
+- Read-only: `oktaListGroupPushMappings`, `oktaGetGroupPushMapping` added to `Integration.Tests.ps1` (skip gracefully if no mappings exist on `prev` org).
+- Write tests: new `GroupPush.Tests.ps1` — create mapping, get, update status, trigger push, delete. Requires an app with provisioning enabled in `prev` org; tests skip if no suitable app found.
+
+---
+
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|

@@ -439,7 +439,7 @@ function _oktaMakeCall()
 {
     param
     (
-        [parameter(Mandatory=$true)][ValidateSet("Get", "Head", "Post", "Put", "Delete")][String]$method,
+        [parameter(Mandatory=$true)][ValidateSet("Get", "Head", "Post", "Put", "Delete", "Patch")][String]$method,
         [parameter(Mandatory=$true)][String]$uri,
         [parameter(Mandatory=$true)][hashtable]$headers,
         [parameter(Mandatory=$false)][Object]$body = @{},
@@ -469,7 +469,7 @@ function _oktaMakeCall()
         if (!$Global:myWebSession)
         {
             Write-Verbose("Creating myWebSession first")
-            if ( ($method -eq "Post") -or ($method -eq "Put") )
+            if ( ($method -eq "Post") -or ($method -eq "Put") -or ($method -eq "Patch") )
             {
                 $postData = ConvertTo-Json $body -Depth 10
                 Write-Verbose($postData)
@@ -480,7 +480,7 @@ function _oktaMakeCall()
                             -ContentType $contentType -Verbose:$oktaVerbose -ErrorVariable evar -SessionVariable Global:myWebSession -UseBasicParsing
             }
         } else {
-            if ( ($method -eq "Post") -or ($method -eq "Put") )
+            if ( ($method -eq "Post") -or ($method -eq "Put") -or ($method -eq "Patch") )
             {
                 $postData = ConvertTo-Json $body -Depth 10
                 Write-Verbose($postData)
@@ -657,7 +657,7 @@ function _oktaNewCall()
     param
     (
         [parameter(Mandatory=$true)][ValidateScript({_testOrg -org $_})][String]$oOrg,
-        [parameter(Mandatory=$true)][ValidateSet("Get", "Head", "Post", "Put", "Delete")][String]$method,
+        [parameter(Mandatory=$true)][ValidateSet("Get", "Head", "Post", "Put", "Delete", "Patch")][String]$method,
         [parameter(Mandatory=$true)][String]$resource,
         [parameter(Mandatory=$false)][Object]$body = @{},
         [parameter(Mandatory=$false)][boolean]$enablePagination = $OktaOrgs[$oOrg].enablePagination,
@@ -818,29 +818,27 @@ function oktaGetLogs()
     return oktaListLogs @splat
 }
 
-#not working
-function oktaPushGroupToApp {
-    param(
-        [parameter(Mandatory=$false)]
-        [ValidateLength(1,100)]
-        [string]$oOrg=$oktaDefOrg,
-        [string]$oktaGid,
-        [string]$appId, 
-        [ValidateSet("ACTIVE","INACTIVE")]
-        $status = "ACTIVE"
+function oktaListGroupPushMappings()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$false)][ValidateRange(1,200)][int]$limit=20,
+        [parameter(Mandatory=$false)][String]$after
     )
 
-    [string]$method = "Post"
-    [string]$resource = "/api/internal/instance/$appId/grouppush"
+    [string]$method = "Get"
+    [string]$resource = '/api/v1/apps/' + $appId + '/group-push/mappings?limit=' + $limit
 
-    $psobj = @{
-        userGroupId=$oktaGid
-        status=$status
-    } | ConvertTo-Json
+    if ($after)
+    {
+        $resource += '&after=' + $after
+    }
 
     try
     {
-        $request =  _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $psobj
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -limit $limit
     }
     catch
     {
@@ -850,7 +848,179 @@ function oktaPushGroupToApp {
         }
         throw $_
     }
+    return $request
+}
 
+function oktaGetGroupPushMapping()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$true)][String]$mappingId
+    )
+
+    [string]$method = "Get"
+    [string]$resource = '/api/v1/apps/' + $appId + '/group-push/mappings/' + $mappingId
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    return $request
+}
+
+function oktaCreateGroupPushMapping()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$true)][String]$sourceGroupId,
+        [parameter(Mandatory=$false)][String]$targetGroupId,
+        [parameter(Mandatory=$false)][String]$targetGroupName,
+        [parameter(Mandatory=$false)][ValidateSet("ACTIVE","INACTIVE")][String]$status = "ACTIVE"
+    )
+
+    if ($targetGroupId -and $targetGroupName)
+    {
+        throw "Specify either -targetGroupId (link existing) or -targetGroupName (create new), not both."
+    }
+    if (-not $targetGroupId -and -not $targetGroupName)
+    {
+        throw "One of -targetGroupId or -targetGroupName is required."
+    }
+
+    $psobj = @{
+        sourceGroupId = $sourceGroupId
+        status        = $status
+    }
+
+    if ($targetGroupId)   { $psobj['targetGroupId']   = $targetGroupId }
+    if ($targetGroupName) { $psobj['targetGroupName'] = $targetGroupName }
+
+    [string]$method = "Post"
+    [string]$resource = '/api/v1/apps/' + $appId + '/group-push/mappings'
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $psobj
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    return $request
+}
+
+function oktaUpdateGroupPushMapping()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$true)][String]$mappingId,
+        [parameter(Mandatory=$false)][ValidateSet("ACTIVE","INACTIVE","ERROR")][String]$status,
+        [parameter(Mandatory=$false)][String]$sourceGroupId,
+        [parameter(Mandatory=$false)][String]$targetGroupName
+    )
+
+    $psobj = @{}
+    if ($status)          { $psobj['status']          = $status }
+    if ($sourceGroupId)   { $psobj['sourceGroupId']   = $sourceGroupId }
+    if ($targetGroupName) { $psobj['targetGroupName'] = $targetGroupName }
+
+    # Okta Group Push Mappings uses PATCH, not PUT
+    [string]$method = "Patch"
+    [string]$resource = '/api/v1/apps/' + $appId + '/group-push/mappings/' + $mappingId
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $psobj
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    return $request
+}
+
+function oktaDeleteGroupPushMapping()
+{
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$true)][String]$mappingId
+    )
+
+    [string]$method = "Delete"
+    [string]$resource = '/api/v1/apps/' + $appId + '/group-push/mappings/' + $mappingId
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    return $request
+}
+
+function oktaTriggerGroupPush()
+{
+    # NOTE: This function uses an undocumented Okta internal endpoint.
+    # It is not covered by Okta's API support agreements and may change without notice.
+    # Use oktaUpdateGroupPushMapping for the supported public alternative.
+    param
+    (
+        [parameter(Mandatory=$false)][ValidateLength(1,100)][String]$oOrg=$oktaDefOrg,
+        [parameter(Mandatory=$true)][String]$appId,
+        [parameter(Mandatory=$true)][String]$mappingId,
+        [parameter(Mandatory=$false)][ValidateSet("ACTIVE","INACTIVE")][String]$status = "ACTIVE"
+    )
+
+    $psobj = @{ status = $status }
+
+    # Internal endpoint lives on the -admin subdomain
+    [string]$method = "Put"
+    [string]$adminBase = ($OktaOrgs[$oOrg].baseUrl -replace '(https://[^.]+)', '$1-admin')
+    [string]$resource = $adminBase + '/api/internal/instance/' + $appId + '/grouppush/' + $mappingId
+
+    try
+    {
+        $request = _oktaNewCall -method $method -resource $resource -oOrg $oOrg -body $psobj
+    }
+    catch
+    {
+        if ($oktaVerbose -eq $true)
+        {
+            Write-Host -ForegroundColor red -BackgroundColor white $_.TargetObject
+        }
+        throw $_
+    }
+    return $request
 }
 
 function oktaNewUser()

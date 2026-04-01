@@ -62,4 +62,4 @@
 - `oktaGetUserbyID` has commented-out URL encoding (line 1470) — usernames with `+`, `@`, spaces won't encode correctly
 - `oktaNewUser` sends plaintext password in the API body — this is how the Okta API works, but worth noting
 - `oktaCheckCredsOld` is presumably dead code / superseded by `oktaCheckCreds`
-- `oktaPushGroupToApp` is marked `#not working` in a comment
+- `oktaPushGroupToApp` is marked `#not working` — confirmed no such public endpoint exists. The correct public API is `/api/v1/apps/{appId}/group-push/mappings` (released 2025). Internal trigger is `/api/internal/instance/{appId}/grouppush/{mappingId}`. Scheduled for replacement in Phase 6.
